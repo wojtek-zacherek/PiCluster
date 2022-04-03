@@ -1,0 +1,6 @@
+https://magpi.raspberrypi.com/articles/build-a-raspberry-pi-cluster-computer
+https://ryanstutorials.net/bash-scripting-tutorial/bash-variables.php
+https://mpitutorial.com/tutorials/mpi-hello-world/
+https://linuxize.com/post/how-to-install-git-on-raspberry-pi/
+
+https://glmdev.medium.com/building-a-raspberry-pi-cluster-f5f2446702e8
