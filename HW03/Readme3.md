@@ -12,6 +12,10 @@ Once allocated, simply run the executables with command line arguments:
 ```
 mpirun program.bin #arg1 #arg2 ...
 ```
+To clear the directory of outstanding executables:
+```
+make clean
+```
 
 ## Matrix Column-Vector Multiplication
 This programs performs a matrix-vector operation by dividing the multiplcation column-wise: each process acquires columns from the matrix and performs a partial summation for each row. The program utilizes MPI_Reduce to quickly sum all the partial sums from the various processes.
