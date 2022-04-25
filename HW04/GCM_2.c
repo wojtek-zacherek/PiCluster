@@ -13,6 +13,15 @@ void printVector(double *v1, int N){
     }
     printf("\n");
 }
+void printMatrix(double **A, int N){
+    int i,j;
+    for(i = 0; i < N; i++){
+        for(j = 0; j < N; j++){
+            printf("%.3f ",A[i][j]);
+        }
+        printf("\n");
+    }
+}
 
 double** mallocMatrix(int numRows, int numCols){
     double **matrixPtr = (double**)malloc(numRows * sizeof(double*));
@@ -107,7 +116,7 @@ void generateA(double **A, int N){
             if(i==j)
                 A[i][j] = 1.0;
             else
-                A[i][j] = 1.0/(j+1);
+                A[i][j] = 1.0/(N*(j+1));
         }
     }
 }
@@ -134,8 +143,8 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
     srand(time(NULL) + my_rank);
 
-    int N = 3;
-    int k = 0;
+    int N = 30;
+    int k = 1;
     int kMax = N;
     double residuals[kMax];
 
@@ -155,68 +164,63 @@ int main(int argc, char *argv[]){
     double *v = mallocVector(N);
     double *r_current = mallocVector(N);
     double *x_current = mallocVector(N);
-    double *x_next = mallocVector(N);
-    double *r_next = mallocVector(N);
-    double *p_next = mallocVector(N);
     double *finalResult = mallocVector(N);
     double alpha_current;
-    double tolerance = 0.01;
+    double tolerance = 0.00000001;
     double residual;
     double beta_current;
+    double alpha_next;
+    double *r_previous = mallocVector(N);
+    double *p_previous = mallocVector(N);
+    double *x_previous = mallocVector(N);
+    double alpha_previous;
+    double *x_diff = mallocVector(N);
 
-    copyArray(p0, p_current, N);
-    copyArray(r0, r_current, N);
-    copyArray(x0, x_current, N);
+    copyArray(p0, p_previous, N);
+    copyArray(r0, r_previous, N);
+    copyArray(x0, x_previous, N);
 
-    printf("b%d: ",k);
+    printf("b%d: ",0);
     printVector(b,N);
+    printf("A: \n");
+    printMatrix(A,N);
 
     while(k < kMax){
         if(k >= kMax){break;}
-        if(k > 0 && residual < tolerance){break;}
         printf("-------k = %d--------\n",k);
         
-        multVector(A, p_current, v, N);     // Step 8
-        printf("v%d: ",k);
-        printVector(v,N);
-        
-        alpha_current = scalarInnerProduct(r_current, r_current, N) / scalarInnerProduct(p_current, v, N);        // Step 9
-        printf("alpha_%d: %f\n",k, alpha_current);
+        multVector(A, p_previous, v, N);
+        alpha_previous = pow(vectorNorm(r_previous,N),2) / scalarInnerProduct(p_previous,v,N);
 
-        saxpy(alpha_current, p_current, x_current, x_next, N);      // Step 10
-        printf("x%d: ",k+1);
-        printVector(x_next,N);
+        saxpy(alpha_previous,p_previous,x_previous,x_current,N);
+        saxpy(-1*alpha_previous,v,r_previous,r_current,N);
 
-        saxpy(-1*alpha_current, v, r_current, r_next, N);       // Step 11
-        printf("r%d: ",k+1);
-        printVector(r_next,N);
-        
-        residual = vectorNorm(r_next, N);        // Step 12
-        residuals[k] = residual;
-        printf("res%d: %f\n",k, residual);
-        
+        multVectScalar(-1, x_current, x_current, N);
+        addVector(x_previous, x_current,x_diff,N);
+        multVectScalar(-1, x_current, x_current, N);
+        residual = vectorNorm(x_diff,N);
+        residuals[k-1] = residual;
+        if(residual < tolerance){
+            printf("Tolerance reached\n");
+            break;
+        }
         
 
-        // beta_current = scalarInnerProduct(r_next, r_next, N) / scalarInnerProduct(r_current, r_current, N);     // Step 13
-        beta_current = pow(vectorNorm(r_next,N),2) / pow(vectorNorm(r_current,N),2);     // Step 13
-        printf("beta%d: %f\n",k, beta_current);
+        beta_current = pow(vectorNorm(r_current,N),2) / pow(vectorNorm(r_previous,N),2);
+        saxpy(beta_current,p_previous,r_current,p_current,N);
 
-        saxpy(beta_current, p_current, r_next, p_next, N);      // Step 14
-        printf("p%d: ",k+1);
-        printVector(p_next,N);
+        copyArray(r_current,r_previous,N);
+        copyArray(p_current,p_previous,N);
+        copyArray(x_current,x_previous,N);
 
-        k = k + 1;      // Step 15
-
-        copyArray(x_next, x_current, N);
-        copyArray(r_next, r_current, N);
-        copyArray(p_next, p_current, N);
+        k++;
     }
     printf("------- end --------\n");
 
     printf("Residuals: ");
     printVector(residuals,kMax);
 
-    copyArray(x_next, finalResult, N);
+    copyArray(x_current, finalResult, N);
 
     printf("Target: ");
     printVector(b, N);
@@ -238,10 +242,11 @@ int main(int argc, char *argv[]){
     free(v);
     free(r_current);
     free(x_current);
-    free(x_next);
-    free(r_next);
-    free(p_next);
     free(finalResult);
+    free(r_previous);
+    free(p_previous);
+    free(x_previous);
+    free(x_diff);
     freeMatrix(A,N,N);
 
     MPI_Finalize();
