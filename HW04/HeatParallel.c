@@ -1,3 +1,9 @@
+/*
+
+
+Notes: -Wall -Wextra -g are very useful. Let me find out my variables for declaring the size of array weren't initialized in the worker functions.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
@@ -38,7 +44,7 @@ double** mallocMatrix(int numRows, int numCols){
     }
     return matrixPtr;
 }
-void freeMatrix(double **A, int numRows, int numCols){
+void freeMatrix(double **A, int numRows){
     int i;
     for (i = 0; i < numRows; i++){
         free(A[i]);
@@ -55,13 +61,12 @@ void generateVector(double *b, int N, int offset){
         if(offset > 0){
             b[i] = 1.0 / (i + 1.0 + 10*(rand()/(double)RAND_MAX));
         }else{
-            b[i] = 1;
+            b[i] = 1.0 / (i + 1);
         }
     }
 }
 
 int main(int argc, char *argv[]){
-    printf("Hello\n");
     int my_rank, comm_sz;
     
     MPI_Init(NULL,NULL);
@@ -74,9 +79,10 @@ int main(int argc, char *argv[]){
     int NN;
     double mu = 0.1;
 
-    double *u = mallocVector(NN);
-    double *q = mallocVector(NN);
-    double *qFinal = mallocVector(NN);
+    
+    double *u;
+    double *q;
+    double *qFinal;
 
     int i, j;
     int indicies[5];
@@ -91,10 +97,13 @@ int main(int argc, char *argv[]){
     int *myData;
     myData = malloc(_a * sizeof(int));
     if(my_rank == 0){
-        printf("Hello2\n");
-        N = 4;
+        u = mallocVector(NN);
+        q = mallocVector(NN);
+        qFinal = mallocVector(NN);
+        N = 9;
         NN = NUM_PER_BLOCK_AXIS * N;
-        generateVector(u, NN, 1);
+        generateVector(u, NN, 0);
+        
         
         int blocksPerProc = N / comm_sz;
         int blocksExtra = N % comm_sz;
@@ -123,25 +132,31 @@ int main(int argc, char *argv[]){
             printf("Vector u: ");
             printVector(u, NN);
         }
-        printf("done 0\n");
+        printf("Parent setup complete\n");
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
     MPI_Scatter(runData, _a, MPI_INT, myData, _a, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
+    N = myData[0];
+    NN = NUM_PER_BLOCK_AXIS * N;
     if(my_rank == 0 && DEBUG){
-        printf("Division of labor done\n");
+        printf("Division of labor complete\n");
+    }else{
+        u = mallocVector(NN);
+        q = mallocVector(NN);
+        qFinal = mallocVector(NN);
     }
 
     MPI_Bcast(u, NN, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
     if(my_rank == 0 && DEBUG){
-        printf("Vector transfer done\n");
+        printf("Vector transfer complete\n");
     }
 
 
-    N = myData[0];
-    NN = NUM_PER_BLOCK_AXIS * N;
+    
+    // printf("%d %d\n",myData[1] * NUM_PER_BLOCK_AXIS,myData[2] * NUM_PER_BLOCK_AXIS);
     for(i = myData[1] * NUM_PER_BLOCK_AXIS; i < myData[2] * NUM_PER_BLOCK_AXIS; i++){
         internalIndex = i % 4;
         blockNum = i / 4;
@@ -165,23 +180,24 @@ int main(int argc, char *argv[]){
 
     MPI_Reduce(q, qFinal, NN, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
-    if(my_rank == 0 && DEBUG){
-        printf("Vector transfer done\n");
-    }
+    // if(my_rank == 0 && DEBUG){
+    //     printf("Vector transfer done\n");
+    // }
 
-    printf("Output q: ");
-    printVector(q, NN);
+    // printf("Output q: ");
+    // printVector(q, NN);
+    MPI_Barrier(MPI_COMM_WORLD);
     if(my_rank == 0){
         printf("qFinal: ");
         printVector(qFinal, NN);
     }
+
+
     MPI_Barrier(MPI_COMM_WORLD);
-    // free(q);
-    // free(u);
-    // free(myData);
-    // if(my_rank == 0){
-    //     free(qFinal);
-    // }
+    free(q);
+    free(u);
+    free(myData);
+    free(qFinal);
     
     MPI_Finalize();
     return 0;
