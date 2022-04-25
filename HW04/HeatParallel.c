@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <mpi.h>
 #include <time.h>
+#include <math.h>
 
 #define DEBUG 1
 #define NUM_PER_BLOCK_AXIS 4
@@ -60,13 +61,13 @@ void generateVector(double *b, int N, int offset){
 }
 
 int main(int argc, char *argv[]){
+    printf("Hello\n");
     int my_rank, comm_sz;
     
     MPI_Init(NULL,NULL);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
     srand(time(NULL)+ my_rank);
-
     // Ensure N >= 4
 
     int N;
@@ -75,6 +76,7 @@ int main(int argc, char *argv[]){
 
     double *u = mallocVector(NN);
     double *q = mallocVector(NN);
+    double *qFinal = mallocVector(NN);
 
     int i, j;
     int indicies[5];
@@ -83,16 +85,17 @@ int main(int argc, char *argv[]){
     int blockNum2 = -1;
     int blockNum3 = -1;
 
-    // {numBlocksN, startingBlock#(inclusive), endingBlock#(exclusive)}
+    // // {numBlocksN, startingBlock#(inclusive), endingBlock#(exclusive)}
     int _a = 3;
     int runData[_a * comm_sz];
-    int *myData = malloc(3 * sizeof(int));
+    int *myData;
+    myData = malloc(_a * sizeof(int));
     if(my_rank == 0){
-        
-        N = 10;
+        printf("Hello2\n");
+        N = 4;
         NN = NUM_PER_BLOCK_AXIS * N;
         generateVector(u, NN, 1);
-
+        
         int blocksPerProc = N / comm_sz;
         int blocksExtra = N % comm_sz;
         int currentCounter = 0;
@@ -107,6 +110,7 @@ int main(int argc, char *argv[]){
             }
             runData[_a*i + 2] = currentCounter;
         }
+        
         if(DEBUG){
             printf("Number nodes = %d\n",comm_sz);
         }
@@ -119,8 +123,9 @@ int main(int argc, char *argv[]){
             printf("Vector u: ");
             printVector(u, NN);
         }
+        printf("done 0\n");
     }
-    // MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
 
     MPI_Scatter(runData, _a, MPI_INT, myData, _a, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
@@ -128,10 +133,7 @@ int main(int argc, char *argv[]){
         printf("Division of labor done\n");
     }
 
-    // MPI_Barrier(MPI_COMM_WORLD);
-    // printf("Ouch\n");
     MPI_Bcast(u, NN, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    // printf("Ouch%d\n",my_rank);
     MPI_Barrier(MPI_COMM_WORLD);
     if(my_rank == 0 && DEBUG){
         printf("Vector transfer done\n");
@@ -161,7 +163,7 @@ int main(int argc, char *argv[]){
         }
     }
 
-    // MPI_Reduce(q, q, NN, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(q, qFinal, NN, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
     if(my_rank == 0 && DEBUG){
         printf("Vector transfer done\n");
@@ -169,10 +171,18 @@ int main(int argc, char *argv[]){
 
     printf("Output q: ");
     printVector(q, NN);
-
-    free(q);
-    free(u);
-    free(myData);
+    if(my_rank == 0){
+        printf("qFinal: ");
+        printVector(qFinal, NN);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    // free(q);
+    // free(u);
+    // free(myData);
+    // if(my_rank == 0){
+    //     free(qFinal);
+    // }
+    
     MPI_Finalize();
     return 0;
 }
