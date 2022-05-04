@@ -8,8 +8,6 @@
 
 // -np 4 --mca btl_vader_single_copy_mechanism none
 
-enum programType{Float,Double,Int};
-
 void printVector(float *v1, int N){
     int i;
     for(i = 0; i < N; i++){
@@ -22,20 +20,16 @@ int populateArray(float *target, int N, int bins, int Nperbin){
     int min = 0;
     int max = 10;
     int tracker[bins];
-    // for(i = 0; i < bins; i++){
-    //     tracker[i] = 0;
-    // }
     for(i = 0; i < N; i++){
-        target[i] = (rand()) + ((float)rand() / RAND_MAX);
         target[i] = (float)((rand() % (-1 + max)) + (float)rand()/(float)RAND_MAX);
     }
 }
 
 // https://linuxhint.com/min-function-c/
-int getMin(int a, int b){
+int getMinInt(int a, int b){
     return (a > b) ? b : a;
 }
-int getMax(int a, int b){
+int getMaxInt(int a, int b){
     return (a > b) ? a : b;
 }
 
@@ -53,6 +47,7 @@ void findMinMax(float *target, int N, float *min, float *max, int searchNum){
             *max = target[i + start];
         }
     }
+    printf("\tApproximate Min = %f\n\tApproximate Max = %f\n",*min,*max);    
 }
 
 void copyArray(float *src, float *dest, int N){
@@ -62,9 +57,6 @@ void copyArray(float *src, float *dest, int N){
     }
 }
 
-int cmpfunc (const void * a, const void * b) {
-   return ( *(float*)a - *(float*)b );
-}
 int compare (const void * a, const void * b)
 {
   float fa = *(const float*) a;
@@ -93,50 +85,49 @@ int main(int argc, char *argv[]){
     srand(time(NULL)+ my_rank);
 
     if(my_rank==0){
-        printf("Important State Variables:\n\tnumber of proccessors: %d\n\tcurrent processor rank: %d\n",comm_sz,my_rank);
+        printf("Important State Variables:\n\tnumber of proccessors: %d\n\troot processor rank: %d\n",comm_sz,my_rank);
     }
     // Assumptions: we know the number of elements. Buckets are same size. Data is is divided into buckets when created.
 
     int i;
     int numBins = comm_sz;
-    int numElements = numBins * 100000000;
+    // int numElements = numBins * 10000000;
+    int numElements = 1489021;
     float *arrayToSort;
     void **bins;
     float min, max;
-    int searchNum = getMax(10, 0.1*numElements);
-    float elementsPer = numElements / numBins;
+    int searchNum = getMaxInt(10, 0.1*numElements);
+    int elementsPer = numElements / numBins + 1;
     int elementsExtra = numElements % numBins;
     float *localBucket;
     float padding = 0.05;
+    float **arraysBinned;
+    int elementsProc[comm_sz];
+    
     if(my_rank==0){
-        printf("Program Variables:\n\tnumBins: %d\n\tnumElements: %d\n\telementsPer:%.4f\n",numBins,numElements,elementsPer);
+        printf("Important Program Variables:\n\tnumBins: %d\n\tnumElements: %d\n\telementsPer: %d\n\tpadding: %.4f\n",numBins,numElements,elementsPer,padding);
     }
     
     if(my_rank == 0){
-        printf("Populating array with %d floats\n",numElements);
         arrayToSort = (float *)malloc(numElements * sizeof(float));
-        populateArray(arrayToSort, numElements, numBins, numElements/numBins);
-        // printVector(arrayToSort,numElements);
-        findMinMax(arrayToSort,numElements,&min,&max,searchNum);
-        printf("Local Min = %f \nLocal Max = %f \n",min,max);    
-    }
-
-    float **arraysBinned;
-    int elementsProc[comm_sz];
-    if(my_rank == 0){
         arraysBinned = (float **)malloc(numBins * sizeof(float*));
         for(i = 0; i < numBins; i++){
             arraysBinned[i] = (float *)malloc(elementsPer * sizeof(float));
         }
+        printf("Populating array with %d floats\n",numElements);
+        populateArray(arrayToSort, numElements, numBins, numElements/numBins);
 
+        findMinMax(arrayToSort,numElements,&min,&max,searchNum);
+    }
 
+    
+    if(my_rank == 0){
+    
         float borders[comm_sz - 1];
         for(i = 1; i < comm_sz; i++){
             borders[i - 1] = i * ((float)(max-min)/(numBins)) + min;
-            printf("  -  %f\n",borders[i - 1]);
+            printf("\tborder %d: %f\n",i-1,borders[i - 1]);
         }
-
-        // printVector(borders,comm_sz-1);
         
         int currentSizes[comm_sz];
         for(i = 0; i < comm_sz; i++){
@@ -145,106 +136,75 @@ int main(int argc, char *argv[]){
         }
         int j;
         float currEL = 0;
+        printf("Beginning stage 1 bucket sort\n");
         for(i = 0; i < numElements; i++){
             currEL = arrayToSort[i];
             
             for(j = 0; j < comm_sz; j++){
                 if((j == comm_sz - 1) || (currEL < borders[j])){
                     if(elementsProc[j] + 1 > currentSizes[j]){
-                        currentSizes[j] = currentSizes[j] + getMax(10,(int)(padding*elementsPer));
+                        currentSizes[j] = currentSizes[j] + getMaxInt(10,(int)(padding*elementsPer));
                         arraysBinned[j] = realloc(arraysBinned[j],(currentSizes[j] * sizeof(float)));
-                        printf("Increasing bucket %d to %d. Curr num of elements: %d\n",j,currentSizes[j],elementsProc[j]);
+                        printf("\tIncreasing bucket %d to %d. Curr num of elements: %d\n",j,currentSizes[j],elementsProc[j]);
                     }
                     arraysBinned[j][elementsProc[j]] = currEL;
                     elementsProc[j]++;
                     break;
                 }
             }
-            // if(j == comm_sz - 2){
-            //     arraysBinned[j+1][elementsProc[j+1]] = currEL;
-            //     elementsProc[j+1]++;
-            // }
-
         }
-        printf("Done Bucket sorting\n");
-        int sum = 0;
-        for(i = 0; i < numBins; i++){
-            // printVector(arraysBinned[i],elementsProc[i]);
-            printf("%d elePro = %d\n",i,elementsProc[i]);
-            sum+=elementsProc[i];
-        }
-        printf("Sum:%d\n",sum);
+        printf("Complete stage 1 bucket sort\n");
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
     int myNum = -1;
     MPI_Scatter(elementsProc,1,MPI_INT,&myNum,1,MPI_INT,0,MPI_COMM_WORLD);
-    printf("  My num=%d\n",myNum);
 
+    
     if(my_rank==0){
+        printf("Beginning stage 2 bucket sort\n");
         localBucket = arraysBinned[0];
-        // MPI_Request requests[comm_sz - 1];
+        MPI_Request requests[comm_sz];
         for(i = 1; i < comm_sz; i++){
-            // MPI_Isend(arraysBinned[i],elementsProc[i],MPI_FLOAT,i,0,MPI_COMM_WORLD,requests[i-1]);
-            MPI_Send(arraysBinned[i],elementsProc[i],MPI_FLOAT,i,0,MPI_COMM_WORLD);
+            MPI_Isend(arraysBinned[i],elementsProc[i],MPI_FLOAT,i,0,MPI_COMM_WORLD,&requests[i]);
+            // MPI_Send(arraysBinned[i],elementsProc[i],MPI_FLOAT,i,0,MPI_COMM_WORLD);
         }
 
-        // printVector(localBucket,myNum);
+
         qsort(localBucket, myNum, sizeof(float), compare);
-        // printVector(localBucket,myNum);
-        // for(i = 1; i < comm_sz; i++){
-        //     MPI_Wait(requests[i-1], MPI_STATUS_IGNORE);
-        // }
         copyArray(localBucket,arrayToSort,myNum);
-        int offset = myNum;
-        MPI_Barrier(MPI_COMM_WORLD);
-        for(i = 1; i < comm_sz; i++){
-            printf("        Received From proc%d\n",i);
-            MPI_Recv(arrayToSort + offset, elementsProc[i], MPI_FLOAT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            offset += elementsProc[i];
-        }
-        printf("        Done recieing\n");
-        
 
+        for(i = 1; i < comm_sz; i++){
+            MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+        }
+
+        int recvOffset = myNum;
+
+        for(i = 1; i < comm_sz; i++){
+            MPI_Recv(arrayToSort + recvOffset, elementsProc[i], MPI_FLOAT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            recvOffset += elementsProc[i];
+        }
+
+        printf("Complete stage 2 bucket sort\n");
     }else{
-        
         localBucket = (float *)malloc(myNum * sizeof(float));
         MPI_Recv(localBucket,myNum,MPI_FLOAT,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-        printf("Received %d\n",my_rank);
         
         qsort(localBucket, myNum, sizeof(float), compare);
         
-        MPI_Barrier(MPI_COMM_WORLD);
         MPI_Send(localBucket,myNum,MPI_FLOAT,0,0,MPI_COMM_WORLD);
-        printf("Sent %d\n",my_rank);
     }
-
-    
-    
-    // MPI_Scatter(arrayToSort,elementsPer,MPI_FLOAT,localBucket,elementsPer,MPI_FLOAT,0,MPI_COMM_WORLD);
-    // qsort(localBucket, elementsPer, sizeof(float), cmpfunc);
-    // MPI_Gather(localBucket,elementsPer,MPI_FLOAT,arrayToSort,elementsPer,MPI_FLOAT,0,MPI_COMM_WORLD);
     
 
     if(my_rank == 0){
-        // printVector(arrayToSort,numElements);
-        // printf("DONEDONE\n");
         checkSortiness(arrayToSort,numElements);
-        // printf("Freeing arrayToSort\n");
         free(arrayToSort);
         for(i = 0; i < numBins; i++){
-            printf("Freeing %d\n",i);
             free(arraysBinned[i]);
         }
-        // printf("DONEDONE\n");
         free(arraysBinned);
-        // printf("11DONEDONE\n");
-        // free(localBucket);
-        // printf("22DONEDONE\n");
     }else{
-        // printf("LB %d\n",my_rank);
         free(localBucket);
-        // printf("Freed %d\n",my_rank);
     }
     
     MPI_Finalize();
