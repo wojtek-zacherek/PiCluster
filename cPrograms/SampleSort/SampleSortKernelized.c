@@ -1,3 +1,6 @@
+// Assumptions: we know the number of elements. Buckets are same size. Data is is divided into buckets when created.
+// -np 4 --mca btl_vader_single_copy_mechanism none
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
@@ -5,10 +8,18 @@
 #include <float.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <string.h>
 
 #define DEBUG 0
+struct timePair {
+    struct timeval start;
+    struct timeval end;
+    char name[30];
+};
+struct timePair program, kernel, stage1, stage2, verify, dataInitMain, dataInitKernel;
+#define sizeTimeArray  7
+struct timePair timeArray[sizeTimeArray];
 
-// -np 4 --mca btl_vader_single_copy_mechanism none
 
 void printVector(float *v1, int N){
     int i;
@@ -35,12 +46,12 @@ int getMaxInt(int a, int b){
 }
 
 
-void findMinMax(float *target, int N, float *min, float *max, int searchNum){
+void findMinMax(float *target, int N, float *min, float *max, int searchWidth){
     *min = *max = target[0];
-    int start = rand() % (N - searchNum);
+    int start = rand() % (N - searchWidth);
     int i;
 
-    for(i = 0; i < searchNum; i++){
+    for(i = 0; i < searchWidth; i++){
         if(target[i + start] < *min){
             *min = target[i + start];
         }else if(target[i + start] > *max){
@@ -75,62 +86,38 @@ int checkSortiness(float *target, int N){
     return 0;
 }
 
-int main(int argc, char *argv[]){
-    struct timeval programStart, programEnd, variableSetupStart, variableSetupEnd, arraySetupStart, arraySetupEnd, stage1Start, stage1End, distributionStart, distributionEnd, stage2Start, stage2End;
-    gettimeofday(&programStart,NULL);
-
-    int my_rank, comm_sz;
-    int i, j;
-    
-    MPI_Init(NULL,NULL);
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
-    srand(time(NULL)+ my_rank);
-    
-
-    if(my_rank==0){
-        printf("Important State Variables:\n\tnumber of proccessors: %d\n\troot processor rank: %d\n",comm_sz,my_rank);
-    }
-    // Assumptions: we know the number of elements. Buckets are same size. Data is is divided into buckets when created.
-
-    gettimeofday(&variableSetupStart,NULL);
+int sampleSort(float *targetArray, int N, int my_rank, int comm_sz){
+    gettimeofday(&timeArray[1].start,NULL); strcpy(timeArray[1].name,"dataInitKernel");
+    int i,j;
     int NBins = comm_sz;
-    int N = 6938503;
-    float *targetArray;
+    
     float min, max;
     float padding = 0.05;
-    int searchNum = getMaxInt(10, 0.1*N);
+    int searchWidth = getMaxInt(10, 0.1*N);
     
     float **bucketArray;
     float *localBucket;//
     int runningBucketSizes[comm_sz];//
     int averageBucketSize = N / NBins + 1;
     int myBucketSize = -1;//
-    gettimeofday(&variableSetupEnd,NULL);
+    gettimeofday(&timeArray[1].end,NULL);
 
-    
-    
     if(my_rank==0){
         printf("Important Program Variables:\n\tNBins: %d\n\tN: %d\n\taverageBucketSize: %d\n\tpadding: %.4f\n",NBins,N,averageBucketSize,padding);
     }
     
     if(my_rank == 0){
-        gettimeofday(&arraySetupStart,NULL);
-        targetArray = (float *)malloc(N * sizeof(float));
         bucketArray = (float **)malloc(NBins * sizeof(float*));
         for(i = 0; i < NBins; i++){
             bucketArray[i] = (float *)malloc(averageBucketSize * sizeof(float));
         }
-        if(DEBUG) printf("Populating array with %d floats\n",N);
-        populateArray(targetArray, N);
-        findMinMax(targetArray,N,&min,&max,searchNum);
+        findMinMax(targetArray,N,&min,&max,searchWidth);
         if(DEBUG) printf("\tApproximate Min = %f\n\tApproximate Max = %f\n",min,max);
-        gettimeofday(&arraySetupEnd,NULL);
     }
+    gettimeofday(&timeArray[1].end,NULL);
 
-    
     if(my_rank == 0){
-        gettimeofday(&stage1Start,NULL);
+        gettimeofday(&timeArray[2].start,NULL); strcpy(timeArray[2].name,"Stage 1");
         float borders[comm_sz - 1];
         for(i = 1; i < comm_sz; i++){
             borders[i - 1] = i * ((float)(max-min)/(NBins)) + min;
@@ -162,9 +149,9 @@ int main(int argc, char *argv[]){
             }
         }
         if(DEBUG) printf("Complete stage 1 bucket sort\n");
-        gettimeofday(&stage1End,NULL);
+        gettimeofday(&timeArray[2].end,NULL);
 
-        gettimeofday(&distributionStart,NULL);
+        gettimeofday(&timeArray[3].start,NULL); strcpy(timeArray[3].name,"Stage 2");
         MPI_Barrier(MPI_COMM_WORLD);
         MPI_Scatter(runningBucketSizes,1,MPI_INT,&myBucketSize,1,MPI_INT,0,MPI_COMM_WORLD);
         localBucket = bucketArray[0];
@@ -173,9 +160,7 @@ int main(int argc, char *argv[]){
             MPI_Isend(bucketArray[i],runningBucketSizes[i],MPI_FLOAT,i,0,MPI_COMM_WORLD,&requests[i]);
             // MPI_Send(bucketArray[i],runningBucketSizes[i],MPI_FLOAT,i,0,MPI_COMM_WORLD);
         }
-        gettimeofday(&distributionEnd,NULL);
 
-        gettimeofday(&stage2Start,NULL);
         if(DEBUG) printf("Beginning stage 2 bucket sort\n");
         qsort(localBucket, myBucketSize, sizeof(float), compare);
         copyArray(localBucket,targetArray,myBucketSize);
@@ -190,6 +175,7 @@ int main(int argc, char *argv[]){
         }
 
         if(DEBUG) printf("Complete stage 2 bucket sort\n");
+        gettimeofday(&timeArray[3].end,NULL);
 
     }else{
         MPI_Barrier(MPI_COMM_WORLD);
@@ -201,46 +187,8 @@ int main(int argc, char *argv[]){
         MPI_Send(localBucket,myBucketSize,MPI_FLOAT,0,0,MPI_COMM_WORLD);
 
     }
-    
-
-    
-    
-
-    
-    // if(my_rank==0){
-    //     printf("Beginning stage 2 bucket sort\n");
-    //     localBucket = bucketArray[0];
-    //     MPI_Request requests[comm_sz];
-    //     for(i = 1; i < comm_sz; i++){
-    //         MPI_Isend(bucketArray[i],runningBucketSizes[i],MPI_FLOAT,i,0,MPI_COMM_WORLD,&requests[i]);
-    //         // MPI_Send(bucketArray[i],runningBucketSizes[i],MPI_FLOAT,i,0,MPI_COMM_WORLD);
-    //     }
-
-
-    //     qsort(localBucket, myBucketSize, sizeof(float), compare);
-    //     copyArray(localBucket,targetArray,myBucketSize);
-    //     for(i = 1; i < comm_sz; i++){
-    //         MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
-    //     }
-
-    //     int recvOffset = myBucketSize;
-    //     for(i = 1; i < comm_sz; i++){
-    //         MPI_Recv(targetArray + recvOffset, runningBucketSizes[i], MPI_FLOAT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    //         recvOffset += runningBucketSizes[i];
-    //     }
-
-    //     printf("Complete stage 2 bucket sort\n");
-    // }else{
-    //     localBucket = (float *)malloc(myBucketSize * sizeof(float));
-    //     MPI_Recv(localBucket,myBucketSize,MPI_FLOAT,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-    //     qsort(localBucket, myBucketSize, sizeof(float), compare);
-    //     MPI_Send(localBucket,myBucketSize,MPI_FLOAT,0,0,MPI_COMM_WORLD);
-    // }
-    
 
     if(my_rank == 0){
-        checkSortiness(targetArray,N);
-        free(targetArray);
         for(i = 0; i < NBins; i++){
             free(bucketArray[i]);
         }
@@ -248,9 +196,72 @@ int main(int argc, char *argv[]){
     }else{
         free(localBucket);
     }
+}
+
+double calculateTimes(struct timePair x){
+    double time_taken = x.end.tv_sec + x.end.tv_usec / 1e6 - x.start.tv_sec - x.start.tv_usec / 1e6;
+    return time_taken;
+}
+
+int main(int argc, char *argv[]){
+    /* Begin: Bare Requirements */
+    gettimeofday(&timeArray[0].start,NULL); strcpy(timeArray[0].name,"Program Runtime");
+    int my_rank, comm_sz;
+    int i, j;
+    MPI_Init(NULL,NULL);
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
+    srand(time(NULL)+ my_rank);
     
+    if(my_rank==0){
+        printf("Important State Variables:\n\tnumber of proccessors: %d\n\troot processor rank: %d\n",comm_sz,my_rank);
+    }
+    /* End: Bare Requirements */
+    
+
+    /* Begin: Data definition and population */
+    float *targetArray;
+    int N = 6938503;
+    
+    if(my_rank == 0){
+        gettimeofday(&timeArray[4].start,NULL); strcpy(timeArray[4].name,"Matrix Setup");
+        targetArray = (float *)malloc(N * sizeof(float));
+        if(DEBUG) printf("Populating array with %d floats\n",N);
+        populateArray(targetArray, N);
+        gettimeofday(&timeArray[4].end,NULL);
+    }
+    /* End: Data definition and population */
+
+
+    /* Begin: Sorting */
+    gettimeofday(&timeArray[5].start,NULL); strcpy(timeArray[5].name,"Kernel Time");
+    sampleSort(targetArray,N,my_rank,comm_sz);    
+    gettimeofday(&timeArray[5].end,NULL);
+    /* End: Sorting */
+
+
+    /* Begin: Sort Verification */
+    if(my_rank == 0){
+        gettimeofday(&timeArray[6].start,NULL); strcpy(timeArray[6].name,"Verification Time");
+        checkSortiness(targetArray,N);
+        gettimeofday(&timeArray[6].end,NULL);
+    }
+    /* End: Sort Verification */
+    
+
+    /* Begin: Cleanup */
+    if(my_rank == 0){
+        free(targetArray);
+    }
     MPI_Finalize();
-    gettimeofday(&programEnd,NULL);
+    /* End: Cleanup */
+    gettimeofday(&timeArray[0].end,NULL);
+
+    if(my_rank == 0){
+        for(i = 0; i < sizeTimeArray; i++){
+            printf("Time for \"%s\" = %.3f s\n",timeArray[i].name,calculateTimes(timeArray[i]));
+        }
+    }
 
     return 0;
 }
