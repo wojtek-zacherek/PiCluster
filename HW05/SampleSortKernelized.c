@@ -221,7 +221,7 @@ int main(int argc, char *argv[]){
 
     /* Begin: Data definition and population */
     float *targetArray;
-    int N = 6938503;
+    int N = 69385039;
     
     if(my_rank == 0){
         gettimeofday(&timeArray[4].start,NULL); strcpy(timeArray[4].name,"Matrix Setup");
@@ -257,11 +257,13 @@ int main(int argc, char *argv[]){
     /* End: Cleanup */
     gettimeofday(&timeArray[0].end,NULL);
 
-    if(my_rank == 0){
+    if(DEBUG && my_rank == 0){
         for(i = 0; i < sizeTimeArray; i++){
             printf("Time for \"%s\" = %.3f s\n",timeArray[i].name,calculateTimes(timeArray[i]));
         }
     }
-
+    if(my_rank == 0){
+        printf("Bins = %d . Time for \"%s\" = %.3f s\n",comm_sz,timeArray[5].name,calculateTimes(timeArray[5]));
+    }
     return 0;
 }
