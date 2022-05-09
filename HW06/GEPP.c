@@ -30,6 +30,17 @@ void printMatrix(double **A, int N){
         printf("\n");
     }
 }
+void printSubMatrix(double *A, int nCols, int nRows){
+    int i,j;
+    for(i = 0; i < nRows; i++){
+        for(j = 0; j < nCols; j++){
+            printf("%.3f ",A[i * nCols + j]);
+        }
+        printf("\n");
+    }
+}
+
+
 
 void populateArray(double *target, int N){
     int i;
@@ -79,15 +90,31 @@ void freeMatrixDouble(double **target, int N){
     free(target);
 }
 
-void doSomething(int my_rank, int comm_sz, int N, int *rowsPerProc, int *N_rows){
+double getMinDouble(double a, double b){
+    return (a > b) ? b : a;
+}
+double getMaxDouble(double a, double b){
+    return (a > b) ? a : b;
+}
+
+void doSomething(int my_rank, int comm_sz, int N, int *rowsPerProc, int *N_rows, int *maxRowNum, int *procStillInPlay){
     // Calculate # of rows for each processors
     *N_rows = (int)(N * ((double)1/comm_sz));
     int N_extra = N - comm_sz*(*N_rows);
+    maxRowNum = 0;
     int i;
     for(i = 0; i < comm_sz; i++){
         rowsPerProc[i] = *N_rows;
         if(i < N_extra){
             rowsPerProc[i]++;
+        }
+        if(i <= my_rank){
+            maxRowNum += rowsPerProc[i];
+        }
+        if(rowsPerProc[i] > 0){
+            procStillInPlay[i] = 1;
+        }else{
+            procStillInPlay[i] = 0;
         }
     }
     *N_rows = rowsPerProc[my_rank];
@@ -96,7 +123,7 @@ void doSomething(int my_rank, int comm_sz, int N, int *rowsPerProc, int *N_rows)
 
 void kernel(int my_rank, int comm_sz){
     // Necesary data
-    double **submatrix;
+    double *submatrix;
     double *b;
     int *globalRowOrderList;      // N_rows
     int *localRowList;      // N        <-- only row
@@ -105,14 +132,19 @@ void kernel(int my_rank, int comm_sz){
     int i, j, k;
     double alpha;
     int rowsPerProc[comm_sz];
-
+    int maxRowNum;
     
 
     // rowsPerProc = malloc(comm_sz * sizeof(int));
     int internalRow = 0, internalCol = 0;
+    double compareListValues[comm_sz];
+    int compareListIndex[comm_sz];
+    double colMinValue;
+    int rowMinIndex;
+    int procStillInPlay[comm_sz]; // 1 = yes, 0 = no
     // Input N, matrix 
     if(my_rank == 0){
-        N = 10;
+        N = 12;
         double *matrix;
         
 
@@ -135,8 +167,9 @@ void kernel(int my_rank, int comm_sz){
         // Send N;
         MPI_Bcast(&N,1,MPI_INT,0,MPI_COMM_WORLD);
         MPI_Barrier(MPI_COMM_WORLD);
-        doSomething(my_rank, comm_sz, N, rowsPerProc, &N_rows); // Calculate # of rows for each processors
+        doSomething(my_rank, comm_sz, N, rowsPerProc, &N_rows, &maxRowNum, procStillInPlay); // Calculate # of rows for each processors
         printf("Proc %d N = %d\nProc %d #rows = %d\n",my_rank,N,my_rank,N_rows);
+        printVectorInt(procStillInPlay,comm_sz);
         printf("%d %d %d %d\n",rowsPerProc[0],rowsPerProc[1],rowsPerProc[2],rowsPerProc[3]);
 
         int sendOffset = 0;
@@ -154,11 +187,55 @@ void kernel(int my_rank, int comm_sz){
         
 
         submatrix = matrix;
-        int colMin;
+        
+        internalRow = 0;
+        printSubMatrix(submatrix,N,N_rows);
         while(internalCol < N){
-            for(internalRow = 0; internalRow < N; internalRow++){
-                submatrix[internalRow]
+            
+            // for(internalRow = 0; internalRow < ; internalRow++){
+            //     for(i = internalRow; i < N; i++){
+            //         submatrix[i * N + internalCol];
+            //     }
+            // }
+            int firstSet = 0;
+            double tempVal;
+            for(i = 0; i < N_rows; i++){
+                if(localRowList[i] != -1){
+                    if(firstSet != 0){
+                        tempVal = fabs(submatrix[i * N + internalCol]);
+                        // printf("%.4f\n",tempVal);
+                        if(colMinValue > tempVal){
+                            colMinValue = tempVal;
+                            rowMinIndex = localRowList[i];
+                        }
+                    }else{
+                        colMinValue = fabs(submatrix[i * N + internalCol]);
+                        rowMinIndex = localRowList[i];
+                        firstSet = 1;
+                    }
+                }
             }
+            printf(" <><><> Proc %d pass %d Minimum Value %.4f at row %d\n",my_rank,internalCol,colMinValue,rowMinIndex);
+
+            compareListValues[0] = colMinValue;
+            compareListIndex[0] = rowMinIndex;
+            int numProcToCount = 1;
+            for(j = 1; j < comm_sz; j++){
+                if(procStillInPlay[j] == 1){
+                    MPI_Recv(compareListValues + numProcToCount, 1, MPI_DOUBLE, j, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    MPI_Recv(compareListIndex + numProcToCount, 1, MPI_INT, j, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    numProcToCount++;
+                    printf("");
+                }
+            }
+            
+            MPI_Barrier(MPI_COMM_WORLD);
+            double minVal;
+            int minIndex;
+            int minProc;
+            printf("..........Global Min of %.3f at row %d in proc %d\n",minVal,minIndex,minProc);
+            
+            internalCol++;
         }
 
         
@@ -171,15 +248,11 @@ void kernel(int my_rank, int comm_sz){
 
         MPI_Bcast(&N,1,MPI_INT,0,MPI_COMM_WORLD);
         MPI_Barrier(MPI_COMM_WORLD);
-        doSomething(my_rank, comm_sz, N, rowsPerProc, &N_rows); // Calculate # of rows for each processors
-        printf("Proc %d N = %d\nProc %d #rows = %d\n",my_rank,N,my_rank,N_rows);
+        doSomething(my_rank, comm_sz, N, rowsPerProc, &N_rows, &maxRowNum, procStillInPlay); // Calculate # of rows for each processors
+        // printf("Proc %d N = %d\nProc %d #rows = %d\n",my_rank,N,my_rank,N_rows);
 
         if(N_rows >= 1){
-            // submatrix = (double **)malloc(N_rows * sizeof(double*));
-            // for(i = 0; i < N_rows; i++){
-            //     submatrix[i] = (double *)malloc(N * sizeof(double));
-            // }
-            submatrix = (double **)malloc(N_rows*N*sizeof(double));
+            submatrix = (double *)malloc(N_rows*N*sizeof(double));
             globalRowOrderList = (int *)malloc(N * sizeof(int));
 
             
@@ -193,14 +266,47 @@ void kernel(int my_rank, int comm_sz){
                 localRowList[i] = i + localRowList[0];
             }
             
-            printVectorInt(localRowList,N_rows);
-            printVectorDouble(submatrix,N*N_rows);
-
+            // printVectorInt(localRowList,N_rows);
+            printSubMatrix(submatrix,N,N_rows);
             
-            // // int i;
-            // for(i = 0; i < N_rows; i++){
-            //     free(submatrix[i]);
-            // }
+
+
+
+            while(internalCol < N){
+                int firstSet = 0;
+                double tempVal;
+                for(i = 0; i < N_rows; i++){
+                    if(localRowList[i] != -1){
+                        if(firstSet != 0){
+                            tempVal = fabs(submatrix[i * N + internalCol]);
+                            // printf("%.4f\n", (submatrix[localRowList[i] * N + internalCol]));
+                            if(colMinValue > tempVal){
+                                colMinValue = tempVal;
+                                rowMinIndex = localRowList[i];
+                            }
+                        }else{
+                            colMinValue = fabs(submatrix[i * N + internalCol]);
+                            rowMinIndex = localRowList[i];
+                            firstSet = 1;
+                        }
+                    }
+                }
+                printf(" <><><> Proc %d Minimum Value %.4f at row %d\n",my_rank,colMinValue,rowMinIndex);
+
+
+                MPI_Send(&colMinValue, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                MPI_Send(&rowMinIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                internalCol++;
+            }
+
+
+
+
+
+
+
+
+
             free(submatrix);
             
             free(globalRowOrderList);
