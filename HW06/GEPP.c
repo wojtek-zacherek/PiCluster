@@ -143,9 +143,10 @@ void kernel(int my_rank, int comm_sz){
     double colMinValue;
     int rowMinIndex;
     int procStillInPlay[comm_sz]; // 1 = yes, 0 = no
+    int numRowsCompleted = 0;
     // Input N, matrix 
     if(my_rank == 0){
-        N = 12;
+        N = 4;
         double *matrix;
         
 
@@ -201,11 +202,12 @@ void kernel(int my_rank, int comm_sz){
             // }
             int firstSet = 0;
             double tempVal;
+            
             for(i = 0; i < N_rows; i++){
                 if(localRowList[i] != -1){
+                    tempVal = fabs(submatrix[i * N + internalCol]);
+                    printf("%.4f\n",tempVal);
                     if(firstSet != 0){
-                        tempVal = fabs(submatrix[i * N + internalCol]);
-                        // printf("%.4f\n",tempVal);
                         if(colMinValue > tempVal){
                             colMinValue = tempVal;
                             rowMinIndex = localRowList[i];
@@ -219,10 +221,13 @@ void kernel(int my_rank, int comm_sz){
             }
             // printf(" <><><> Proc %d pass %d Minimum Value %.4f at row %d\n",my_rank,internalCol,colMinValue,rowMinIndex);
 
-            compareListValues[0] = colMinValue;
-            compareListIndex[0] = rowMinIndex;
-            compareListProc[0] = 0;
-            int numProcToCount = 1;
+            int numProcToCount = 0;
+            if(firstSet == 1){
+                compareListValues[0] = colMinValue;
+                compareListIndex[0] = rowMinIndex;
+                compareListProc[0] = 0;
+                numProcToCount = 1;
+            }
             for(j = 1; j < comm_sz; j++){
                 if(procStillInPlay[j] == 1){
                     MPI_Recv(compareListValues + numProcToCount, 1, MPI_DOUBLE, j, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -254,7 +259,38 @@ void kernel(int my_rank, int comm_sz){
                 }
             }
             printf("..........Col %d Global Min of %.3f at row %d in proc %d\n",internalCol, minVal,minIndex,minProc);
+            for(j = 1; j < comm_sz; j++){
+                if(procStillInPlay[j] == 1){
+                    MPI_Send(&minProc, 1, MPI_INT, j, 0, MPI_COMM_WORLD);
+                }
+            }
+            if(minProc == my_rank){
+                numRowsCompleted++;
+                for(j = 0; j < N_rows; j++){
+                    if(localRowList[j] == rowMinIndex){
+                        localRowList[j] = -1;
+                        break;
+                    }
+                }
+
+                int inPlay = 1;
+                if(numRowsCompleted >= N_rows){
+                    inPlay = 0;
+                }
+                for(j = 0; j < comm_sz; j++){
+                    if(j != my_rank){
+                        MPI_Send(&inPlay, 1, MPI_INT, j, 0, MPI_COMM_WORLD);
+                    }
+                }
+            }else{
+                int tempPlay;
+                MPI_Recv(&tempPlay, 1, MPI_INT, minProc, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+                procStillInPlay[minProc] = tempPlay;
+            }
+            printVectorInt(procStillInPlay,comm_sz);
+
             
+
             internalCol++;
             // MPI_Barrier(MPI_COMM_WORLD);
         }
@@ -315,10 +351,50 @@ void kernel(int my_rank, int comm_sz){
                 }
                 // printf(" <><><> Proc %d Minimum Value %.4f at row %d\n",my_rank,colMinValue,rowMinIndex);
 
-
+                if(firstSet == 1){
                 MPI_Send(&colMinValue, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
                 MPI_Send(&rowMinIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
                 MPI_Send(&my_rank, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                }
+
+                int minProc;
+                MPI_Recv(&minProc, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                // if(minProc == my_rank){
+                //     for(j = 0; j < N_rows; j++){
+                //         if(localRowList[j] == rowMinIndex){
+                //             localRowList[j] = -1;
+                //             break;
+                //         }
+                //     }
+                // }
+                printf("---minProc %d\n",minProc);
+                if(minProc == my_rank){
+                    numRowsCompleted++;
+                    printf("Proc 1 match, num rowcomp %d, numrows %d\n",numRowsCompleted,N_rows);
+                    for(j = 0; j < N_rows; j++){
+                        if(localRowList[j] == rowMinIndex){
+                            localRowList[j] = -1;
+                            printf("Proc 1 found row %d\n",j);
+                            break;
+                        }
+                    }
+
+                    int inPlay = 1;
+                    if(numRowsCompleted >= N_rows){
+                        inPlay = 0;
+                        printf("Proc 1 out of play\n");
+                    }
+                    for(j = 0; j < comm_sz; j++){
+                        if(j != my_rank){
+                            MPI_Send(&inPlay, 1, MPI_INT, j, 0, MPI_COMM_WORLD);
+                        }
+                    }
+                }else{
+                    int tempPlay;
+                    MPI_Recv(&tempPlay, 1, MPI_INT, minProc, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+                    procStillInPlay[minProc] = tempPlay;
+                }
+
                 internalCol++;
             }
 
