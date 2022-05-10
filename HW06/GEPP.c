@@ -153,14 +153,6 @@ void kernel(int my_rank, int comm_sz){
     if(my_rank == 0){
         N = 3;
         double *matrix;
-        
-
-        // TODO: mallocMatrix doesnt work for some odd reason, it worked in all my previous programs
-        // mallocMatrixDouble(matrix,N);
-        // matrix = (double **)malloc(N * sizeof(double*));
-        // for(i = 0; i < N; i++){
-        //     matrix[i] = (double *)malloc(N * sizeof(double));
-        // }
         matrix = (double *)malloc(N * N * sizeof(double));
         globalRowOrderList = (int *)malloc(N * sizeof(int));
         incomingRow = (double *)malloc((N+1) * sizeof(double));
@@ -202,7 +194,6 @@ void kernel(int my_rank, int comm_sz){
         for(i = 1; i < N_rows; i++){
             localRowList[i] = i + localRowList[0];
         }
-        // printVectorInt(localRowList,N_rows);
         
 
         submatrix = matrix;
@@ -211,11 +202,6 @@ void kernel(int my_rank, int comm_sz){
         // printSubMatrix(submatrix,N,N_rows);
         while(internalCol < N){
             
-            // for(internalRow = 0; internalRow < ; internalRow++){
-            //     for(i = internalRow; i < N; i++){
-            //         submatrix[i * N + internalCol];
-            //     }
-            // }
             int firstSet = 0;
             double tempVal;
             
@@ -277,24 +263,19 @@ void kernel(int my_rank, int comm_sz){
             printf("..........Col %d Global Min of %.3f at row %d in proc %d\n",internalCol, minVal,minIndex,minProc);
             for(j = 1; j < comm_sz; j++){
                 if(procStillInPlay[j] == 1){
-                    // printf("Sending to Proc 1 value %d\n",minProc);
                     MPI_Send(&minProc, 1, MPI_INT, j, 0, MPI_COMM_WORLD);
                     MPI_Send(&minIndex, 1, MPI_INT, j, 0, MPI_COMM_WORLD);
                 }
             }
+
+            
             if(globalRowOrderList[internalRow] != minIndex){
-                // printf("internal row = %d\n",internalRow);
                 int temp = globalRowOrderList[internalRow];
-                // printf("temp row = %d\n",temp);
                 globalRowOrderList[internalRow] = minIndex;
-                // printf("minIndex row = %d\n",minIndex);
                 globalRowOrderList[minIndex] = temp;
             }
-            
             internalRow++;
-            // printVectorInt(globalRowOrderList,N);
 
-            // globalRowOrderList[i] = i;
             if(minProc == my_rank){
                 numRowsCompleted++;
                 int tempJForCopy;
@@ -327,10 +308,8 @@ void kernel(int my_rank, int comm_sz){
                 int tempPlay;
                 MPI_Recv(&tempPlay, 1, MPI_INT, minProc, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
                 MPI_Recv(incomingRow, N+1, MPI_DOUBLE, minProc, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-                // printVectorDouble(incomingRow,N+1);
                 procStillInPlay[minProc] = tempPlay;
             }
-            // printVectorInt(procStillInPlay,comm_sz);
             
             for(k = 0; k < N_rows; k++){
                 if(localRowList[k] != -1){
@@ -341,10 +320,8 @@ void kernel(int my_rank, int comm_sz){
                     }
                     b[k] = b[k] - alpha*incomingRow[N];
                 }
-            }
-            
+            }////
             internalCol++;
-            // MPI_Barrier(MPI_COMM_WORLD);
         }
 
         
@@ -359,9 +336,7 @@ void kernel(int my_rank, int comm_sz){
             offset += rowsPerProc[j];
             }
         }
-        // MPI_Barrier(MPI_COMM_WORLD);
-        // printVectorDouble(b,N);
-        // printVectorInt(globalRowOrderList,N);
+
         double *bNew = malloc(N*sizeof(double));
         for(j = 0; j < N; j++){
             bNew[j] = b[globalRowOrderList[j]];
@@ -402,11 +377,6 @@ void kernel(int my_rank, int comm_sz){
             for(i = 0; i < N; i++){
                 globalRowOrderList[i] = i;
             }
-            
-            // printVectorInt(localRowList,N_rows);
-            // printSubMatrix(submatrix,N,N_rows);
-            
-
 
             internalCol = 0;
             while(internalCol < N){
@@ -431,7 +401,6 @@ void kernel(int my_rank, int comm_sz){
                     }
                 }
                 // printf(" <><><> Proc %d Minimum Value %.4f at row %d\n",my_rank,colMinValue,rowMinIndex);
-                // printf("Proc 1 iteration %d\n",internalCol);
                 if(firstSet == 1){
                     MPI_Send(&colMinValue, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
                     MPI_Send(&rowMinIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
@@ -444,11 +413,12 @@ void kernel(int my_rank, int comm_sz){
                     int minIndex;
                     MPI_Recv(&minProc, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     MPI_Recv(&minIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    double temp = globalRowOrderList[internalRow];
-                    globalRowOrderList[internalRow] = minIndex;
-                    globalRowOrderList[minIndex] = temp;
+                    if(globalRowOrderList[internalRow] != minIndex){
+                        int temp = globalRowOrderList[internalRow];
+                        globalRowOrderList[internalRow] = minIndex;
+                        globalRowOrderList[minIndex] = temp;
+                    }
                     internalRow++;
-
 
                     if(minProc == my_rank){
                         numRowsCompleted++;
@@ -464,7 +434,6 @@ void kernel(int my_rank, int comm_sz){
                         int inPlay = 1;
                         if(numRowsCompleted >= N_rows){
                             inPlay = 0;
-                            // printf("Proc 1 out of play\n");
                         }
                         for(j = 0; j < comm_sz; j++){
                             if(j != my_rank){
@@ -482,10 +451,8 @@ void kernel(int my_rank, int comm_sz){
                         int tempPlay;
                         MPI_Recv(&tempPlay, 1, MPI_INT, minProc, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
                         MPI_Recv(incomingRow, N+1, MPI_DOUBLE, minProc, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-                        // printVectorDouble(incomingRow,N+1);
                         procStillInPlay[minProc] = tempPlay;
                     }
-
 
                     for(k = 0; k < N_rows; k++){
                         if(localRowList[k] != -1){
@@ -497,22 +464,14 @@ void kernel(int my_rank, int comm_sz){
                             b[k] = b[k] - alpha*incomingRow[N];
                         }
                     }
-
-
-                }
+                }////
                 internalCol++;
             }
-
-            
-            // MPI_Barrier(MPI_COMM_WORLD);
             printSubMatrix(submatrix,N,N_rows);
 
 
 
             MPI_Send(b, N_rows, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-            // MPI_Barrier(MPI_COMM_WORLD);
-
-            
             free(submatrix);
             free(incomingRow);
             free(globalRowOrderList);
