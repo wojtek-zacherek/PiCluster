@@ -9,7 +9,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #define DEBUG 1
-// mpirun -np 4 --mca btl_vader_single_copy_mechanism none FractalMain.bin
+// make && mpirun -np 4 --mca btl_vader_single_copy_mechanism none FractalMain.bin
 
 struct complexDouble{
     double R;
@@ -30,8 +30,14 @@ void generateFractal(int my_rank, int comm_sz, uint xRes, uint yRes, uint iter, 
 uint Mandelbrot(double C_R, double C_I, uint maxInt, double rMax);
 void complexPow(struct complexDouble *operand, struct complexDouble *resultant, double power);
 void complexSum(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant);
+void scalarSum(struct complexDouble *operand1, double R, struct complexDouble *resultant);
+void complexADiffB(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant);
+void complexBDiffA(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant);
+void scalarADiffB(struct complexDouble *operand1, double R, struct complexDouble *resultant);
+void scalarBDiffA(struct complexDouble *operand1, double R, struct complexDouble *resultant);
 void complexMagnitude(struct complexDouble *operand, double *resultant);
 void complexProduct(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant);
+void scalarProduct(struct complexDouble *operand1, double R, struct complexDouble *resultant);
 void saveFile(uint xResolution, uint yResolution, uint thresh, uint **matrix, uint iter);
 void makeColourfull(char **target, uint **matrix, uint xResolution, uint yResolution, uint iter);
 
@@ -55,19 +61,25 @@ int main(int argc, char *argv[]){
     // checkLogic();
     MPI_Barrier(MPI_COMM_WORLD);
 
-    // double xMin = -2;
-    // double xMax = 1;
+    double xMin = -2;
+    double xMax = 1;
+    double yMin = -1.2;
+    double yMax = 1.2;
+    // double xMin = -1.2;
+    // double xMax = 1.2;
     // double yMin = -1.2;
     // double yMax = 1.2;
-    double xMin = -1.5;
-    double xMax = 1.5;
-    double yMin = -1.5;
-    double yMax = 1.5;
 
-    uint xRes = 1920;    //889
+    // double xMin = -1.78;
+    // double xMax = 1.78;
+    // double yMin = -1;
+    // double yMax = 1;
+
+    uint xRes = 1920*1;    //889
     uint yRes = xRes / ((xMax - xMin) / (yMax - yMin));    //500
+    // yRes = 1080;
     uint iter = 127;    // 127
-    double rMax = 50;
+    double rMax = 2;
 
     
 
@@ -178,6 +190,8 @@ void generateFractal(int my_rank, int comm_sz, uint xRes, uint yRes, uint iter, 
     }
 }
 
+
+
 uint Mandelbrot(double C_R, double C_I, uint maxInt, double rMax){
     
     // Z_(n+1) = (Z_n)^2 + C
@@ -187,12 +201,14 @@ uint Mandelbrot(double C_R, double C_I, uint maxInt, double rMax){
     double currentValue = 0;
 
     struct complexDouble Zn = {C_R, C_I};
-    // struct complexDouble C = {C_R, C_I};
-    struct complexDouble C = {0, -0.75};
+    struct complexDouble C = {C_R, C_I};
+    // struct complexDouble C = {0, -0.75};
+    // struct complexDouble C = {0.28, 0.008};
+    // struct complexDouble C = {0.3,-.01};
+    // struct complexDouble C = {-0.835,-0.2321};
+     
 
-    struct complexDouble step1;
-    struct complexDouble step2;
-    struct complexDouble step3;
+    struct complexDouble step1, step2, step3, step4, step5, step6, step7;
     
     
     for(i = 0; i < maxIterations; i++){
@@ -203,16 +219,23 @@ uint Mandelbrot(double C_R, double C_I, uint maxInt, double rMax){
         numIterations++;
 
         // MAIN COMPUTE BEGIN
+        // complexPow(&Zn, &step1, 2);
+        // complexSum(&step1, &C, &step2);
+        // Zn.R = step2.R;
+        // Zn.I = step2.I;
+
         complexPow(&Zn, &step1, 2);
         complexSum(&step1, &C, &step2);
-        // complexProduct(&step2, &C, &step3);
-        // complexPow(&step3, &step3, 2.5);
+        // scalarADiffB(&step2,cos(C.R),&step3);
+        // scalarADiffB(&step2,cos(C.R)*sin(C.I),&step3);
+        scalarProduct(&step2,cos(rand()),&step3);       // Basically a blurring function
+        Zn.R = step3.R;
+        Zn.I = step3.I;
+
         // MAIN COMPUTE END
 
-        Zn.R = step2.R;
-        Zn.I = step2.I;
-        // Zn.R = step3.R;
-        // Zn.I = step3.I;
+        
+        
     }
     numIterations--;
     return i;
@@ -236,13 +259,52 @@ void complexPow(struct complexDouble *operand, struct complexDouble *resultant, 
 }
 
 void complexSum(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant){
-    resultant->R = operand1->R + operand2->R;
-    resultant->I = operand1->I + operand2->I;
-    // printf("Sum:  %.2f + %.2f = %.2f\n",operand1->R, operand2->R, resultant->R);
+    double a = operand1->R + operand2->R;
+    double b = operand1->I + operand2->I;
+    resultant->R = a;
+    resultant->I = b;
 }
+void scalarSum(struct complexDouble *operand1, double R, struct complexDouble *resultant){
+    double a = operand1->R + R;
+    double b = operand1->I + 0;
+    resultant->R = a;
+    resultant->I = b;
+}
+void complexADiffB(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant){
+    double a = operand1->R - operand2->R;
+    double b = operand1->I - operand2->I;
+    resultant->R = a;
+    resultant->I = b;
+}
+void complexBDiffA(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant){
+    double a = operand2->R - operand1->R;
+    double b = operand2->I - operand1->I;
+    resultant->R = a;
+    resultant->I = b;
+}
+void scalarADiffB(struct complexDouble *operand1, double R, struct complexDouble *resultant){
+    double a = operand1->R - R;
+    double b = operand1->I - 0;
+    resultant->R = a;
+    resultant->I = b;
+}
+void scalarBDiffA(struct complexDouble *operand1, double R, struct complexDouble *resultant){
+    double a = R - operand1->R;
+    double b = 0 - operand1->I;
+    resultant->R = a;
+    resultant->I = b;
+}
+
 
 void complexMagnitude(struct complexDouble *operand, double *resultant){
     *resultant = sqrt(pow(operand->R, 2) + pow(operand->I, 2));
+}
+
+void scalarProduct(struct complexDouble *operand1, double R, struct complexDouble *resultant){
+    double a = operand1->R * R ;
+    double b = operand1->I * R + operand1->R * 0;
+    resultant->R = a;
+    resultant->I = b;
 }
 
 void complexProduct(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant){
@@ -288,7 +350,7 @@ void makeColourfull(char **target, uint **matrix, uint xResolution, uint yResolu
     colorSelected.selection = colors; colorSelected.numEntries = iter;
     colorSelected.selection = bluewhite; colorSelected.numEntries = 255;
     // colorSelected.selection = blue; colorSelected.numEntries = 255;
-    // colorSelected.selection = blackredorangewhite; colorSelected.numEntries = 511;
+    colorSelected.selection = blackredorangewhite; colorSelected.numEntries = 511;
 
     for(int i = 0; i < 256; i++){
         blue[i].r = 0;
