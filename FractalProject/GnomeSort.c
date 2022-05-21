@@ -7,6 +7,8 @@
  * 
  * @copyright Copyright (c) 2022
  * 
+ *  Base Code credit: https://www.geeksforgeeks.org/gnome-sort-a-stupid-one/
+ * 
  */
 
 #include <stdio.h>

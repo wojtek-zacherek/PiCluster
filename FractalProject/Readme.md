@@ -1,10 +1,15 @@
 # Parallel Computing Final Project
+## Quick Overview
+My original project was fractal genreation using MPI, but it seems that MPI is not as useful here. Therefore, I also included a gnome sorting program to demonstrate the usefulness of MPI.
+
 ## Link to Project
 https://github.com/wojtek-zacherek/PiCluster/tree/main/FractalProject
 ## Files
-- FractalMain.c: Source code for my custom fractal generator. Takes command line input from 0-4, which determines which type of fractal will be generated.
-- GnomeSort.c: Source code for a Gnome sort. The array size can be changed by modify the `N` value in the source code. Changes take effect after re-compiling.
-- GnomeSortAnalysis.c: Source code for my Gnome Sort anlysis program. This various the number of processors assigned to my sorting algorithm, from 2 up to the number used to run this code (comm_sz).
+- `FractalMain.c`: Source code for my custom fractal generator. Takes command line input from 0-4, which determines which type of fractal will be generated.
+- `GnomeSort.c`: Source code for a Gnome sort. The array size can be changed by modify the `N` value in the source code. Changes take effect after re-compiling.
+- `GnomeSortAnalysis.c`: Source code for my Gnome Sort anlysis program. This various the number of processors assigned to my sorting algorithm, from 2 up to the number used to run this code (comm_sz).
+- `UsefulFunction.h`: support code for my programs. This is necessary!
+- `stb_image_write.h`: support code for my fractal program. This saves the data into jpeg files.
 
 ## Compiling
 I have included a `Makefile`. Running `make` should work. If that doesn't work, run the following lines:
