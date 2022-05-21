@@ -24,7 +24,7 @@ void printMatrix(double **A, int N){
         printf("\n");
     }
 }
-void printSubMatrix(uint **A, int nCols, int nRows){
+void printSubMatrix(int **A, int nCols, int nRows){
     int i,j;
     for(i = 0; i < nRows; i++){
         for(j = 0; j < nCols; j++){
@@ -33,7 +33,7 @@ void printSubMatrix(uint **A, int nCols, int nRows){
         printf("\n");
     }
 }
-void printSubMatrixFlip(uint **A, int nCols, int nRows){
+void printSubMatrixFlip(int **A, int nCols, int nRows){
     int i,j;
     for(i = 0; i < nCols; i++){
         for(j = 0; j < nRows; j++){
@@ -100,7 +100,7 @@ double getMaxDouble(double a, double b){
 }
 
 
-void copyArray(uint *src, uint *dest, int N){
+void copyArray(int *src, int *dest, int N){
     int i;
     for(i = 0; i < N; i++){
         dest[i] = src[i];

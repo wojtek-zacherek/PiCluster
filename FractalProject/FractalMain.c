@@ -1,3 +1,14 @@
+/**
+ * @file FractalMain.c
+ * @author Wojciech Zacherek (zacherw@rose-hulman.com)
+ * @brief 
+ * @version 0.1
+ * @date 2022-05-21
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
@@ -22,12 +33,12 @@ typedef struct rgb{
 } rgb;
 typedef struct colorSelection {
     struct rgb *selection;
-    uint numEntries;
+    int numEntries;
 } colorSelection;
-uint maxValue = 0;
+int maxValue = 0;
 
-void generateFractal(int my_rank, int comm_sz, uint xRes, uint yRes, uint iter, double xMin, double xMax, double yMin, double yMax, double rMax);
-uint Mandelbrot(double C_R, double C_I, uint maxInt, double rMax);
+void generateFractal(int my_rank, int comm_sz, int xRes, int yRes, int iter, double xMin, double xMax, double yMin, double yMax, double rMax);
+int Mandelbrot(double C_R, double C_I, int maxInt, double rMax);
 void complexPow(struct complexDouble *operand, struct complexDouble *resultant, double power);
 void complexSum(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant);
 void scalarSum(struct complexDouble *operand1, double R, struct complexDouble *resultant);
@@ -38,8 +49,8 @@ void scalarBDiffA(struct complexDouble *operand1, double R, struct complexDouble
 void complexMagnitude(struct complexDouble *operand, double *resultant);
 void complexProduct(struct complexDouble *operand1, struct complexDouble *operand2, struct complexDouble *resultant);
 void scalarProduct(struct complexDouble *operand1, double R, struct complexDouble *resultant);
-void saveFile(uint xResolution, uint yResolution, uint thresh, uint **matrix, uint iter);
-void makeColourfull(char **target, uint **matrix, uint xResolution, uint yResolution, uint iter);
+void saveFile(int xResolution, int yResolution, int thresh, int **matrix, int iter);
+void makeColourfull(char **target, int **matrix, int xResolution, int yResolution, int iter);
 
 // void checkLogic(){
 //     struct complexDouble someValue = {1,2};
@@ -75,10 +86,10 @@ int main(int argc, char *argv[]){
     // double yMin = -1;
     // double yMax = 1;
 
-    uint xRes = 1920*1;    //889
-    uint yRes = xRes / ((xMax - xMin) / (yMax - yMin));    //500
+    int xRes = 1920*1;    //889
+    int yRes = xRes / ((xMax - xMin) / (yMax - yMin));    //500
     // yRes = 1080;
-    uint iter = 127;    // 127
+    int iter = 127;    // 127
     double rMax = 2;
 
     
@@ -89,30 +100,30 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
-void generateFractal(int my_rank, int comm_sz, uint xRes, uint yRes, uint iter, double xMin, double xMax, double yMin, double yMax, double rMax){
+void generateFractal(int my_rank, int comm_sz, int xRes, int yRes, int iter, double xMin, double xMax, double yMin, double yMax, double rMax){
     int i, j;
-    uint resOffset = 1;
-    uint **matrix;
-    uint **submatrix;
+    int resOffset = 1;
+    int **matrix;
+    int **submatrix;
 
     if(my_rank == 0){
-        matrix = malloc((xRes + resOffset) * sizeof(uint*));
+        matrix = malloc((xRes + resOffset) * sizeof(int*));
         for(i = 0; i < (xRes + resOffset); i++){
-            matrix[i] = malloc((yRes + resOffset) * sizeof(uint));
+            matrix[i] = malloc((yRes + resOffset) * sizeof(int));
         }
     }
 
     double xSlope = (double)(xMax - xMin) / xRes;
     double ySlope = (double)(yMax - yMin) / yRes;
 
-    uint xDivs = comm_sz;
-    uint yDivs = 1; 
+    int xDivs = comm_sz;
+    int yDivs = 1; 
     int xNumList[comm_sz];
     int yNumList[comm_sz];
 
     double xDivStep = ((double)xRes + resOffset) / xDivs;
     double yDivStep = ((double)yRes + resOffset) / yDivs;
-    uint xStart, xEnd, yStart, yEnd;
+    int xStart, xEnd, yStart, yEnd;
     for(i = 0; i < comm_sz; i++){
         xStart = (i) * xDivStep;
         xEnd =  (i) * xDivStep + xDivStep;
@@ -131,23 +142,23 @@ void generateFractal(int my_rank, int comm_sz, uint xRes, uint yRes, uint iter, 
     yEnd = (yDivs - (0 + 1)) * yDivStep + yDivStep;
 
     printf("Rank %d, xDivs %d, xStep %.2f, yDivs %d, yStep %.2f || xStart %d, xEnd %d, yStart %d, yEnd %d\n", my_rank, xDivs, xDivStep, yDivs, yDivStep, xStart, xEnd, yStart, yEnd);
-    submatrix = malloc((xEnd - xStart) * sizeof(uint*));
+    submatrix = malloc((xEnd - xStart) * sizeof(int*));
     for(i = 0; i < ((xEnd - xStart)); i++){
-        submatrix[i] = malloc((yEnd - yStart) * sizeof(uint));
+        submatrix[i] = malloc((yEnd - yStart) * sizeof(int));
         
     }
     
-    uint val = 0;
+    int val = 0;
     double tempX, tempY;
     // maxValue = 0;
-    for(uint i = 0; i < (xEnd - xStart); i++){
+    for(int i = 0; i < (xEnd - xStart); i++){
         tempX = xSlope*((double)i - 0) + my_rank*(xMax - xMin) / comm_sz + xMin;
-        for(uint j = 0; j < (yEnd - yStart); j++){
+        for(int j = 0; j < (yEnd - yStart); j++){
             tempY = ySlope*(j - 0) + yMin;
             // if(DEBUG == 1){
             //     printf("%d %d : %f %f\n",i,j,tempX,tempY);
             // }
-            // uint val = Mandelbrot(tempX, tempY, thresh, iter);
+            // int val = Mandelbrot(tempX, tempY, thresh, iter);
             // if(my_rank == 0)
             //     printf("X,Y = %.2f,%.2f\n",tempX,tempY);
             val = Mandelbrot(tempX, tempY, iter, rMax);
@@ -192,12 +203,12 @@ void generateFractal(int my_rank, int comm_sz, uint xRes, uint yRes, uint iter, 
 
 
 
-uint Mandelbrot(double C_R, double C_I, uint maxInt, double rMax){
+int Mandelbrot(double C_R, double C_I, int maxInt, double rMax){
     
     // Z_(n+1) = (Z_n)^2 + C
     // Z is a complex point in the complex plain
     // C = Z_0
-    uint i, maxIterations = maxInt, numIterations;
+    int i, maxIterations = maxInt, numIterations;
     double currentValue = 0;
 
     struct complexDouble Zn = {C_R, C_I};
@@ -314,7 +325,7 @@ void complexProduct(struct complexDouble *operand1, struct complexDouble *operan
     resultant->I = b;
 }
 
-void saveFile(uint xResolution, uint yResolution, uint thresh, uint **matrix, uint iter){
+void saveFile(int xResolution, int yResolution, int thresh, int **matrix, int iter){
     FILE* pgmimg;
     size_t fileTime = time(NULL);
     size_t fileSize = snprintf(NULL, 0, "%u_%u_%u_%lu.pgm", xResolution, yResolution, thresh, fileTime) + 1;
@@ -336,7 +347,7 @@ void saveFile(uint xResolution, uint yResolution, uint thresh, uint **matrix, ui
 
 }
 
-void makeColourfull(char **target, uint **matrix, uint xResolution, uint yResolution, uint iter){
+void makeColourfull(char **target, int **matrix, int xResolution, int yResolution, int iter){
     int numColors = iter;
     char maxRGBValue = 255;
     struct rgb colors[numColors];
@@ -408,10 +419,10 @@ void makeColourfull(char **target, uint **matrix, uint xResolution, uint yResolu
     
     *target = malloc(xResolution*yResolution*sizeof(char)*3);
     char *data = *target;
-    uint index = 0;
-    uint index2 = 0;
-    for(uint i = 0; i < xResolution; i++){
-        for(uint j = 0; j < yResolution; j++){
+    int index = 0;
+    int index2 = 0;
+    for(int i = 0; i < xResolution; i++){
+        for(int j = 0; j < yResolution; j++){
             index = (int)(((long)matrix[i][j] * colorSelected.numEntries) / maxValue);
             index2 = 3*(i + j*xResolution);
             
